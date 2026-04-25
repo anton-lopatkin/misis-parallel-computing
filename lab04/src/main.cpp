@@ -1,9 +1,9 @@
 #include <iostream>
 #include <fstream>
+#include <chrono>
 #include <algorithm>
 #include <string>
 #include <cstdint>
-#include <x86intrin.h>
 
 #include "utils.hpp"
 #include "seq.hpp"
@@ -11,20 +11,20 @@
 #include "randidx.hpp"
 
 template<typename Func>
-double cyclesPerElem(Func func, int N, int runs = 3) {
-    uint64_t best = ~0ULL;
+double nsPerElem(Func func, int N, int runs = 3) {
+    double best = 1e18;
     for (int r = 0; r < runs; r++) {
-        uint64_t t0 = static_cast<uint64_t>(__rdtsc());
+        auto t0 = std::chrono::high_resolution_clock::now();
         func();
-        uint64_t elapsed = static_cast<uint64_t>(__rdtsc()) - t0;
-        if (elapsed < best) best = elapsed;
+        auto t1 = std::chrono::high_resolution_clock::now();
+        best = std::min(best, std::chrono::duration<double>(t1 - t0).count());
     }
-    return static_cast<double>(best) / N;
+    return best * 1e9 / N;
 }
 
-void row(std::ofstream& f, const std::string& method, int sizeKB, double cycles) {
-    f << method << "," << sizeKB << "," << cycles << "\n";
-    std::cout << method << " " << sizeKB << " KB - " << cycles << " cycles/elem\n";
+void row(std::ofstream& f, const std::string& range, const std::string& method, int sizeKB, double ns) {
+    f << range << "," << method << "," << sizeKB << "," << ns << "\n";
+    std::cout << method << " " << sizeKB << " KB - " << ns << " ns/elem\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -42,24 +42,24 @@ int main(int argc, char* argv[]) {
     fillRandom(a, MAX_ELEMS);
 
     std::ofstream f(filename);
-    f << "method,size_kb,cycles\n";
+    f << "range,method,size_kb,ns\n";
 
-    auto measure = [&](int kb) {
+    auto measure = [&](const std::string& range, int kb) {
         const int N = kb * 1024 / static_cast<int>(sizeof(int32_t));
         buildIdx(idx, N);
-        row(f, "seq", kb, cyclesPerElem([&]{ sumSeq(a, N); }, N));
-        row(f, "rand", kb, cyclesPerElem([&]{ sumRand(a, N); }, N));
-        row(f, "randidx", kb, cyclesPerElem([&]{ sumRandIdx(a, idx, N); }, N));
+        row(f, range, "seq", kb, nsPerElem([&]{ sumSeq(a, N); }, N));
+        row(f, range, "rand", kb, nsPerElem([&]{ sumRand(a, N); }, N));
+        row(f, range, "randidx", kb, nsPerElem([&]{ sumRandIdx(a, idx, N); }, N));
     };
 
     for (int kb = 1; kb <= 2048; kb++)
-        measure(kb);
+        measure("fine", kb);
 
-    for (int kb = 2048 + 512; kb <= 32 * 1024; kb += 512)
-        measure(kb);
+    for (int kb = 512; kb <= 32 * 1024; kb += 512)
+        measure("medium", kb);
 
-    for (int kb = (32 + 5) * 1024; kb <= 150 * 1024; kb += 5 * 1024)
-        measure(kb);
+    for (int kb = 5 * 1024; kb <= 150 * 1024; kb += 5 * 1024)
+        measure("coarse", kb);
 
     deleteArray(a);
     deleteArray(idx);
