@@ -11,7 +11,7 @@
 #include "randidx.hpp"
 
 template<typename Func>
-double nsPerElem(Func func, int N, int runs = 3) {
+double nsPerElem(Func func, int N, int runs = 15) {
     double best = 1e18;
     for (int r = 0; r < runs; r++) {
         auto t0 = std::chrono::high_resolution_clock::now();
